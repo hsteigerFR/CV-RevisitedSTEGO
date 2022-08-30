@@ -1,4 +1,4 @@
-# CV-RevisitedSTEGO
+# CV - Revisited STEGO
 
 This project is an application-oriented implementation of Mark Hamilton's STEGO model. All credits regarding the initial STEGO model revisited here should go to him and his team. Here is the prime STEGO repository URL : https://github.com/mhamilton723/STEGO.
 
@@ -13,5 +13,10 @@ This project is an application-oriented implementation of Mark Hamilton's STEGO 
 	url={https://openreview.net/forum?id=SaKO6z6Hl0c}
 }
 ```
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+Author : Hugo STEIGER
 
-WIP
+Full documentation : WIP ...
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+Work in progress ...
