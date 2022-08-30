@@ -1,65 +1,51 @@
-output_root: '../'
-pytorch_data_dir: 'D:/workspace/datadrive/pytorch-data/'
-experiment_name: "faces"
-
-num_workers: 10
-max_steps: 100000
-batch_size: 20
-dir_dataset_name: "faces"
-dir_dataset_n_classes: 50
-res: 160
-
-# Model Params
-extra_clusters: 0
-use_true_labels: False
-use_recalibrator: False
-model_type: "vit_small"
-arch: "dino"
-use_fit_model: False
-dino_feat_type: "feat"
-projection_type: "nonlinear"
-dino_patch_size: 8
-granularity: 1
-continuous: True
-dim: 70
-dropout: True
-zero_clamp: True
-
-lr: 5e-4
-pretrained_weights: ~
-use_salience: False
-stabalize: False
-stop_at_zero: True
-
-# Feature Contrastive params
-pointwise: True
-feature_samples: 11
-neg_samples: 5
+arch: dino
 aug_alignment_weight: 0.0
+batch_size: 5
+checkpoint_freq: 1
+continuous: true
 correspondence_weight: 1.0
-
-# IAROA vit small 1/31/22
-neg_inter_weight: 0.63
-pos_inter_weight: 0.25
-pos_intra_weight: 0.67
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+dim: 70
+dino_feat_type: feat
+dino_patch_size: 8
+dir_dataset_n_classes: 100
+dir_dataset_name: cars
+dropout: true
+experiment_name: cars
+extra_clusters: 0
+feature_samples: 11
+granularity: 1
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+lr: 5e-4
+max_epochs: 2
+model_type: vit_small
 neg_inter_shift: 0.46
+neg_inter_weight: 0.63
+neg_samples: 5
+num_workers: 2
+output_root: ../
+pointwise: true
 pos_inter_shift: 0.12
+pos_inter_weight: 0.25
 pos_intra_shift: 0.18
+pos_intra_weight: 0.67
+pretrained_weights: null
+projection_type: nonlinear
+pytorch_data_dir: C:/workspace/datadrive/pytorch-data/
 rec_weight: 0.0
 repulsion_weight: 0.0
-
-reset_probe_steps: ~
-
-# Logging params
-checkpoint_freq: 100
-checkpoint_maxcount: 5
-
-defaults:  
-  - _self_  
-  - override hydra/hydra_logging: disabled  
-  - override hydra/job_logging: disabled
-
-hydra:
-  run:
-    dir: "."
-  output_subdir: null
+res: 304
+reset_probe_steps: null
+stabalize: false
+stop_at_zero: true
+use_fit_model: false
+use_recalibrator: false
+use_salience: false
+use_true_labels: false
+zero_clamp: true

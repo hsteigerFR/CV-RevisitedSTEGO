@@ -1,14 +1,15 @@
 output_root: '../'
-pytorch_data_dir: 'D:/workspace/datadrive/pytorch-data/'
-experiment_name: "faces"
-res: 160
-batch_size: 20
+pytorch_data_dir: 'C:/workspace/datadrive/pytorch-data/'
+experiment_name: "cars"
+
 num_workers: 10
+batch_size: 30
+res: 304
 start: 60
 end: 150
 
 model_paths:
-  - "../faces.ckpt"
+  - "../../test/cars30.ckpt"
 
 defaults:  
   - _self_  

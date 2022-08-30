@@ -133,61 +133,9 @@ class ContrastiveSegDataset(Dataset):
         self.pos_images = pos_images
         self.extra_transform = extra_transform
 
-        if dataset_name == "potsdam":
-            self.n_classes = 3
-            dataset_class = Potsdam
-            extra_args = dict(coarse_labels=True)
-        elif dataset_name == "potsdamraw":
-            self.n_classes = 3
-            dataset_class = PotsdamRaw
-            extra_args = dict(coarse_labels=True)
-        elif dataset_name == "directory":
-            self.n_classes = cfg.dir_dataset_n_classes
-            dataset_class = DirectoryDataset
-            extra_args = dict(path=cfg.dir_dataset_name)
-        elif dataset_name == "cityscapes" and crop_type is None:
-            self.n_classes = 27
-            dataset_class = CityscapesSeg
-            extra_args = dict()
-        elif dataset_name == "cityscapes" and crop_type is not None:
-            self.n_classes = 27
-            dataset_class = CroppedDataset
-            extra_args = dict(
-                dataset_name="cityscapes",
-                crop_type=crop_type,
-                crop_ratio=cfg.crop_ratio)
-        elif dataset_name == "cocostuff3":
-            self.n_classes = 3
-            dataset_class = Coco
-            extra_args = dict(
-                coarse_labels=True,
-                subset=6,
-                exclude_things=True)
-        elif dataset_name == "cocostuff15":
-            self.n_classes = 15
-            dataset_class = Coco
-            extra_args = dict(
-                coarse_labels=False,
-                subset=7,
-                exclude_things=True)
-        elif dataset_name == "cocostuff27" and crop_type is not None:
-            self.n_classes = 27
-            dataset_class = CroppedDataset
-            extra_args = dict(
-                dataset_name="cocostuff27",
-                crop_type=cfg.crop_type,
-                crop_ratio=cfg.crop_ratio)
-        elif dataset_name == "cocostuff27" and crop_type is None:
-            self.n_classes = 27
-            dataset_class = Coco
-            extra_args = dict(
-                coarse_labels=False,
-                subset=None,
-                exclude_things=False)
-            if image_set == "val":
-                extra_args["subset"] = 7
-        else:
-            raise ValueError("Unknown dataset: {}".format(dataset_name))
+        self.n_classes = cfg.dir_dataset_n_classes
+        dataset_class = DirectoryDataset
+        extra_args = dict(path=cfg.dir_dataset_name)
 
         self.aug_geometric_transform = aug_geometric_transform
         self.aug_photometric_transform = aug_photometric_transform

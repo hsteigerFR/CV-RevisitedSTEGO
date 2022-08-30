@@ -75,7 +75,7 @@ def my_app(cfg: DictConfig) -> None:
 
             loader = DataLoader(
                 dataset,
-                256,
+                cfg.batch_size,
                 shuffle=False,
                 num_workers=cfg.num_workers,
                 pin_memory=False)

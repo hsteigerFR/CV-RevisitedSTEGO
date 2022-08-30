@@ -36,6 +36,11 @@ parser.add_argument(
     type=str,
     required="True")
 parser.add_argument(
+    "-cov",
+    "--covariance",
+    help="Enable covariance display",
+    action='store_true')
+parser.add_argument(
     "-l",
     "--linear",
     help="If probs should be linear. Default is related to cluster.",
@@ -147,28 +152,6 @@ def img_unpack(x):
     return I.astype(np.uint8)
 
 
-def make_colormap(cluster_preds, n):
-    dict_color = {}
-    for k in range(n):
-        dict_color[k] = np.random.randint(0, 256, 3)
-
-    I = np.zeros(cluster_preds.shape + (3,))
-    for i in range(I.shape[0]):
-        for j in range(I.shape[1]):
-            index = cluster_preds[i, j]
-            I[i, j] = dict_color[index]
-    return I
-
-
-def kullback_leibler(probs):
-    kl_array = np.zeros((probs.shape[2], probs.shape[3]))
-    n_classes = probs.shape[1]
-    for k in range(n_classes):
-        kl_array += np.multiply(probs[0, k, :, :],
-                                np.log(probs[0, k, :, :] / (1 / n_classes)))
-    return kl_array
-
-
 def correlation_matrix(probs):
     all_points = np.transpose(
         np.reshape(
@@ -180,19 +163,6 @@ def correlation_matrix(probs):
     return cor_mat
 
 
-def correlation_map_overall(probs):
-    cor_map_all = np.zeros((probs.shape[2], probs.shape[3]))
-    maps = [probs[0, i, :, :] for i in range(probs.shape[1])]
-    means = [np.mean(maps[i]) for i in range(len(maps))]
-
-    for i in range(len(maps)):
-        for j in range(len(maps)):
-            if i != j:
-                cor_map_all += np.abs(np.multiply((maps[i] - means[i]), (maps[j] - means[j])) / (
-                    means[i] * means[j]))  # /!\ Elevé quand prob élevée
-    return cor_map_all
-
-
 def show(saved_data):
     for j in range(len(saved_data["cluster_probs"])):
         probs = np.exp(np.array(saved_data["cluster_probs"][j]))
@@ -200,16 +170,11 @@ def show(saved_data):
         step = int(np.sqrt(n_classes))
         x = n_classes // step + 1 * (n_classes % step > 0)
         y = step
-
-        cluster_preds = np.array(saved_data["cluster_preds"][j])[0, :, :]
-        cluster_preds = make_colormap(
-            cluster_preds,
-            n_classes).astype(
-            np.uint8)
         img = img_unpack(saved_data["img"][j])
 
         # Classes
         f, ax = plt.subplots(x, y)
+        plt.suptitle(f"Classes - Element {j}")
         for i in range(n_classes):
             if x == 1 or y == 1:
                 ax[i // step].set_axis_off()
@@ -227,44 +192,17 @@ def show(saved_data):
                                     vmin=0,
                                     vmax=np.max(probs[0, i, :, :]))
                 ax[i // step, i % step].title.set_text(f"Class {i}")
-        plt.show()
-        plt.close(f)
 
         # Covariance
-        cov_mat = correlation_matrix(probs)
-        f = plt.figure()
-        plt.imshow(cov_mat, cmap="jet")
-        plt.title("Covariance")
+        if args.covariance:
+            cov_mat = correlation_matrix(probs)
+            plt.figure(2)
+            plt.imshow(cov_mat, cmap="jet")
+            plt.title(f"Covariance - Element {j}")
+
+        mng = plt.get_current_fig_manager()
+        mng.window.state('zoomed')
         plt.show()
-        plt.close(f)
-
-        # Clusters
-        f = plt.figure()
-        plt.imshow(img)
-        plt.imshow(cluster_preds, alpha=0.55)
-        plt.title("Clusters")
-        plt.show()
-
-        # Uncertainty
-        kl_array = kullback_leibler(probs)
-        kl_array = 1 - (kl_array / np.max(kl_array))
-        my_metric1 = np.sum(kl_array) / (probs.shape[2] * probs.shape[2])
-
-        cor_uncertainty = correlation_map_overall(probs)
-        my_metric2 = np.sum(cor_uncertainty) / \
-            (probs.shape[2] * probs.shape[2])
-
-        f, ax = plt.subplots(1, 2)
-        ax[0].imshow(img)
-        ax[0].imshow(kl_array, alpha=0.55)
-        ax[0].title.set_text(f"KL Uncertainty : {my_metric1}")
-
-        ax[1].imshow(img)
-        ax[1].imshow(cor_uncertainty, alpha=0.55)
-        ax[1].title.set_text(f"Cor Uncertainty : {my_metric2}")
-        plt.suptitle("Uncertainty")
-        plt.show()
-        plt.close(f)
 
 
 if __name__ == "__main__":

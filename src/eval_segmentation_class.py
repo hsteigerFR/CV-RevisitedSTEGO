@@ -30,11 +30,36 @@ parser.add_argument(
     type=str,
     required="True")
 parser.add_argument(
+    "-o",
+    "--output",
+    help="Path to output folder",
+    type=str,
+    required="True")
+parser.add_argument(
+    "-c",
+    "--eval_class",
+    help="Class(es) to evaluate",
+    type=int,
+    nargs='+',
+    required="True")
+parser.add_argument(
     "-m",
     "--model",
     help="Path to model .ckpt file",
     type=str,
     required="True")
+parser.add_argument(
+    "-n_workers",
+    "--num_workers",
+    help="Number of processes used for evaluation",
+    type=int,
+    default=10)
+parser.add_argument(
+    "-b_size",
+    "--batch_size",
+    help="Batch size for evaluation",
+    type=int,
+    default=10)
 parser.add_argument(
     "-l",
     "--linear",
@@ -43,13 +68,21 @@ parser.add_argument(
 args = parser.parse_args()
 
 
+def map2image(array, norm_min, norm_max):
+    return (255 * (array - norm_min) / (norm_max - norm_min)).astype(np.uint8)
+
+
 def pre_process():
     print("Getting model ...")
     model = LitUnsupervisedSegmenter.load_from_checkpoint(args.model)
     res = model.cfg["res"]
     model_name = model.cfg["experiment_name"]
 
+    print("Creating output folder ...")
+    os.makedirs(args.output, exist_ok=True)
+
     print("Generating dataset ...")
+    filenames = []
     loc_path = os.path.join(model_name, "imgs", "loc")
     try:
         os.makedirs(loc_path)
@@ -61,14 +94,16 @@ def pre_process():
              for element in os.listdir(args.input)]
         for image_path in L:
             image_name = os.path.basename(image_path)
+            filenames.append(image_name)
             shutil.copy(image_path, os.path.join(loc_path, image_name))
     else:
         image_name = os.path.basename(args.input)
+        filenames = [image_name]
         shutil.copy(args.input, os.path.join(loc_path, image_name))
 
     print("Importing dataset ...")
-    batch_size = 1
-    num_workers = 1
+    batch_size = args.batch_size
+    num_workers = args.num_workers
     n_pictures = len(os.listdir(loc_path))
     if n_pictures > 1:
         print(f"{n_pictures} images detected.")
@@ -93,7 +128,7 @@ def pre_process():
     batch_offsets = torch.tensor([n % (batch_size)
                                  for n in range(0, n_pictures)])
 
-    return model, test_loader, batch_nums, batch_offsets
+    return model, test_loader, batch_nums, batch_offsets, filenames
 
 
 def evaluate(model, test_loader, batch_nums, batch_offsets):
@@ -137,138 +172,68 @@ def evaluate(model, test_loader, batch_nums, batch_offsets):
                             img.cpu()[offset].unsqueeze(0))
 
 
-def img_unpack(x):
-    x = x.unsqueeze(0)
-    x_array = np.array(unnorm(x).squeeze(0).cpu())
-    I = np.zeros((x_array.shape[2], x_array.shape[2], 3))
-    I[:, :, 0] = x_array[0, 0, :, :] * 255  # R
-    I[:, :, 1] = x_array[0, 1, :, :] * 255  # G
-    I[:, :, 2] = x_array[0, 2, :, :] * 255  # B
-    return I.astype(np.uint8)
-
-
-def make_colormap(cluster_preds, n):
-    dict_color = {}
-    for k in range(n):
-        dict_color[k] = np.random.randint(0, 256, 3)
-
-    I = np.zeros(cluster_preds.shape + (3,))
-    for i in range(I.shape[0]):
-        for j in range(I.shape[1]):
-            index = cluster_preds[i, j]
-            I[i, j] = dict_color[index]
-    return I
-
-
-def kullback_leibler(probs):
-    kl_array = np.zeros((probs.shape[2], probs.shape[3]))
-    n_classes = probs.shape[1]
-    for k in range(n_classes):
-        kl_array += np.multiply(probs[0, k, :, :],
-                                np.log(probs[0, k, :, :] / (1 / n_classes)))
-    return kl_array
-
-
-def correlation_matrix(probs):
-    all_points = np.transpose(
-        np.reshape(
-            probs,
-            (probs.shape[1],
-             probs.shape[2] *
-             probs.shape[3])))
-    cor_mat = np.cov(all_points, rowvar=False)
-    return cor_mat
-
-
-def correlation_map_overall(probs):
-    cor_map_all = np.zeros((probs.shape[2], probs.shape[3]))
-    maps = [probs[0, i, :, :] for i in range(probs.shape[1])]
-    means = [np.mean(maps[i]) for i in range(len(maps))]
-
-    for i in range(len(maps)):
-        for j in range(len(maps)):
-            if i != j:
-                cor_map_all += np.abs(np.multiply((maps[i] - means[i]), (maps[j] - means[j])) / (
-                    means[i] * means[j]))  # /!\ Elevé quand prob élevée
-    return cor_map_all
-
-
-def show(saved_data):
-    for j in range(len(saved_data["cluster_probs"])):
-        probs = np.exp(np.array(saved_data["cluster_probs"][j]))
-        n_classes = probs.shape[1]
-        step = int(np.sqrt(n_classes))
-        x = n_classes // step + 1 * (n_classes % step > 0)
-        y = step
-
-        cluster_preds = np.array(saved_data["cluster_preds"][j])[0, :, :]
-        cluster_preds = make_colormap(
-            cluster_preds,
-            n_classes).astype(
-            np.uint8)
-        img = img_unpack(saved_data["img"][j])
-
-        # Classes
-        f, ax = plt.subplots(x, y)
-        for i in range(n_classes):
-            if x == 1 or y == 1:
-                ax[i // step].set_axis_off()
-                ax[i // step].imshow(img)
-                ax[i // step].imshow(probs[0, i, :, :], alpha=0.5,
-                                     vmin=0, vmax=np.max(probs[0, i, :, :]))
-                ax[i // step].title.set_text(f"Class {i}")
-
-            else:
-                ax[i // step, i % step].set_axis_off()
-                ax[i // step, i % step].imshow(img)
-                ax[i // step,
-                   i % step].imshow(probs[0, i, :, :],
-                                    alpha=0.5,
-                                    vmin=0,
-                                    vmax=np.max(probs[0, i, :, :]))
-                ax[i // step, i % step].title.set_text(f"Class {i}")
-        plt.show()
-        plt.close(f)
-
-        # Covariance
-        cov_mat = correlation_matrix(probs)
-        f = plt.figure()
-        plt.imshow(cov_mat, cmap="jet")
-        plt.title("Covariance")
-        plt.show()
-        plt.close(f)
-
-        # Clusters
-        f = plt.figure()
-        plt.imshow(img)
-        plt.imshow(cluster_preds, alpha=0.55)
-        plt.title("Clusters")
-        plt.show()
-
-        # Uncertainty
-        kl_array = kullback_leibler(probs)
-        kl_array = 1 - (kl_array / np.max(kl_array))
-        my_metric1 = np.sum(kl_array) / (probs.shape[2] * probs.shape[2])
-
-        cor_uncertainty = correlation_map_overall(probs)
-        my_metric2 = np.sum(cor_uncertainty) / \
-            (probs.shape[2] * probs.shape[2])
-
-        f, ax = plt.subplots(1, 2)
-        ax[0].imshow(img)
-        ax[0].imshow(kl_array, alpha=0.55)
-        ax[0].title.set_text(f"KL Uncertainty : {my_metric1}")
-
-        ax[1].imshow(img)
-        ax[1].imshow(cor_uncertainty, alpha=0.55)
-        ax[1].title.set_text(f"Cor Uncertainty : {my_metric2}")
-        plt.suptitle("Uncertainty")
-        plt.show()
-        plt.close(f)
-
-
 if __name__ == "__main__":
-    model, test_loader, batch_nums, batch_offsets = pre_process()
+    model, test_loader, batch_nums, batch_offsets, filenames = pre_process()
     evaluate(model, test_loader, batch_nums, batch_offsets)
     shutil.rmtree(model.cfg["experiment_name"])
-    show(saved_data)
+
+    print("Getting normalization parameters ...")
+    min_L = {eval_class: []
+             for eval_class in range(saved_data["cluster_probs"][0].shape[1])}
+    max_L = {eval_class: []
+             for eval_class in range(saved_data["cluster_probs"][0].shape[1])}
+    for i in tqdm(range(len(saved_data["cluster_probs"]))):
+        probs = np.exp(np.array(saved_data["cluster_probs"][i]))
+
+        if args.eval_class == [-1]:  # Export all classes
+            for eval_class in range(0, probs.shape[1]):
+                min_L[eval_class].append(np.min(probs[0, eval_class, :, :]))
+                max_L[eval_class].append(np.max(probs[0, eval_class, :, :]))
+        else:
+            for eval_class in args.eval_class:
+                min_L[eval_class].append(np.min(probs[0, eval_class, :, :]))
+                max_L[eval_class].append(np.max(probs[0, eval_class, :, :]))
+
+    min_dict = {eval_class: 0 for eval_class in range(
+        saved_data["cluster_probs"][0].shape[1])}
+    max_dict = {eval_class: 1 for eval_class in range(
+        saved_data["cluster_probs"][0].shape[1])}
+    for i in range(len(saved_data["cluster_probs"])):
+        if args.eval_class == [-1]:  # Export all classes
+            for eval_class in range(0, probs.shape[1]):
+                min_dict[eval_class] = min(min_L[eval_class])
+                max_dict[eval_class] = max(max_L[eval_class])
+        else:
+            for eval_class in args.eval_class:
+                min_dict[eval_class] = min(min_L[eval_class])
+                max_dict[eval_class] = max(max_L[eval_class])
+
+    print("Creating output files ...")
+    filenames = sorted(filenames)
+    for i in tqdm(range(len(saved_data["cluster_probs"]))):
+        probs = np.exp(np.array(saved_data["cluster_probs"][i]))
+
+        if args.eval_class == [-1]:  # Export all classes
+            for eval_class in range(0, probs.shape[1]):
+                os.makedirs(
+                    os.path.join(
+                        args.output,
+                        str(eval_class)),
+                    exist_ok=True)
+                export_path = os.path.join(
+                    args.output, str(eval_class), filenames[i])
+                export_array = map2image(
+                    probs[0, eval_class, :, :], min_dict[eval_class], max_dict[eval_class])
+                cv2.imwrite(export_path, export_array)
+        else:
+            for eval_class in args.eval_class:
+                os.makedirs(
+                    os.path.join(
+                        args.output,
+                        str(eval_class)),
+                    exist_ok=True)
+                export_path = os.path.join(
+                    args.output, str(eval_class), filenames[i])
+                export_array = map2image(
+                    probs[0, eval_class, :, :], min_dict[eval_class], max_dict[eval_class])
+                cv2.imwrite(export_path, export_array)

@@ -1,10 +1,7 @@
 import os
 import shutil
 import argparse
-from itertools import chain
-from math import sqrt
 
-import cv2
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
@@ -12,11 +9,7 @@ from matplotlib import pyplot as plt
 from modules import *
 from data import *
 from collections import defaultdict
-from multiprocessing import Pool, freeze_support
-import hydra
-import seaborn as sns
 import torch.multiprocessing
-from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from train_segmentation import LitUnsupervisedSegmenter
@@ -34,6 +27,13 @@ parser.add_argument(
     "--model",
     help="Path to model .ckpt file",
     type=str,
+    required="True")
+parser.add_argument(
+    "-c",
+    "--classes",
+    nargs=2,
+    help="Classes for covariance calculus",
+    type=int,
     required="True")
 parser.add_argument(
     "-l",
@@ -147,29 +147,7 @@ def img_unpack(x):
     return I.astype(np.uint8)
 
 
-def make_colormap(cluster_preds, n):
-    dict_color = {}
-    for k in range(n):
-        dict_color[k] = np.random.randint(0, 256, 3)
-
-    I = np.zeros(cluster_preds.shape + (3,))
-    for i in range(I.shape[0]):
-        for j in range(I.shape[1]):
-            index = cluster_preds[i, j]
-            I[i, j] = dict_color[index]
-    return I
-
-
-def kullback_leibler(probs):
-    kl_array = np.zeros((probs.shape[2], probs.shape[3]))
-    n_classes = probs.shape[1]
-    for k in range(n_classes):
-        kl_array += np.multiply(probs[0, k, :, :],
-                                np.log(probs[0, k, :, :] / (1 / n_classes)))
-    return kl_array
-
-
-def correlation_matrix(probs):
+def correlation_matrix(probs, classes):
     all_points = np.transpose(
         np.reshape(
             probs,
@@ -177,7 +155,41 @@ def correlation_matrix(probs):
              probs.shape[2] *
              probs.shape[3])))
     cor_mat = np.cov(all_points, rowvar=False)
+    """
+    reduced_cor_mat = np.zeros((2,2))
+    index_i = classes[0]
+    index_j = classes[1]
+    reduced_cor_mat[0,0] = cor_mat[index_i,index_i]
+    reduced_cor_mat[1,1] = cor_mat[index_j,index_j]
+    reduced_cor_mat[0,1] = reduced_cor_mat[1,0] = cor_mat[index_i,index_j]
+    """
     return cor_mat
+
+
+def correlation_map(probs, classes):
+    cor_map = np.zeros((probs.shape[2], probs.shape[3]))
+    index_i = classes[0]
+    index_j = classes[1]
+
+    map_i = probs[0, index_i, :, :]
+    map_j = probs[0, index_j, :, :]
+    mean_i = np.mean(map_i)
+    mean_j = np.mean(map_j)
+
+    cor_map = np.multiply((map_i - mean_i),
+                          (map_j - mean_j)) / (mean_j * mean_i)
+    return cor_map
+
+
+def correlation_map_onevsall(probs, my_class):
+    cor_map_all = np.zeros((probs.shape[2], probs.shape[3]))
+    maps = [probs[0, i, :, :] for i in range(probs.shape[1])]
+    means = [np.mean(maps[i]) for i in range(len(maps))]
+    for i in range(len(maps)):
+        if i != my_class:
+            cor_map_all += np.multiply((maps[i] - means[i]),
+                                       (maps[my_class] - means[my_class])) / (means[i] * means[my_class])
+    return cor_map_all
 
 
 def correlation_map_overall(probs):
@@ -188,87 +200,59 @@ def correlation_map_overall(probs):
     for i in range(len(maps)):
         for j in range(len(maps)):
             if i != j:
-                cor_map_all += np.abs(np.multiply((maps[i] - means[i]), (maps[j] - means[j])) / (
-                    means[i] * means[j]))  # /!\ Elevé quand prob élevée
+                cor_map_all += np.multiply((maps[i] - means[i]),
+                                           (maps[j] - means[j])) / (means[i] * means[j])
     return cor_map_all
 
 
-def show(saved_data):
-    for j in range(len(saved_data["cluster_probs"])):
-        probs = np.exp(np.array(saved_data["cluster_probs"][j]))
-        n_classes = probs.shape[1]
-        step = int(np.sqrt(n_classes))
-        x = n_classes // step + 1 * (n_classes % step > 0)
-        y = step
+def show(saved_data, classes):
+    for i in range(len(saved_data["cluster_probs"])):
+        probs = np.exp(np.array(saved_data["cluster_probs"][i]))
+        img = img_unpack(saved_data["img"][i])
 
-        cluster_preds = np.array(saved_data["cluster_preds"][j])[0, :, :]
-        cluster_preds = make_colormap(
-            cluster_preds,
-            n_classes).astype(
-            np.uint8)
-        img = img_unpack(saved_data["img"][j])
+        index_i = classes[0]
+        index_j = classes[1]
 
-        # Classes
-        f, ax = plt.subplots(x, y)
-        for i in range(n_classes):
-            if x == 1 or y == 1:
-                ax[i // step].set_axis_off()
-                ax[i // step].imshow(img)
-                ax[i // step].imshow(probs[0, i, :, :], alpha=0.5,
-                                     vmin=0, vmax=np.max(probs[0, i, :, :]))
-                ax[i // step].title.set_text(f"Class {i}")
+        f, ax = plt.subplots(2, 4)
+        plt.suptitle(f"Image {i}")
 
-            else:
-                ax[i // step, i % step].set_axis_off()
-                ax[i // step, i % step].imshow(img)
-                ax[i // step,
-                   i % step].imshow(probs[0, i, :, :],
-                                    alpha=0.5,
-                                    vmin=0,
-                                    vmax=np.max(probs[0, i, :, :]))
-                ax[i // step, i % step].title.set_text(f"Class {i}")
+        ax[0, 0].imshow(img)
+        ax[0, 0].imshow(probs[0, index_i, :, :], alpha=0.7)
+        ax[0, 0].title.set_text(f"Probs C{index_i}")
+
+        ax[0, 1].imshow(img)
+        ax[0, 1].imshow(probs[0, index_j, :, :], alpha=0.7)
+        ax[0, 1].title.set_text(f"Probs C{index_j}")
+
+        cor_map = correlation_map(probs, classes)
+        ax[0, 2].imshow(img)
+        ax[0, 2].imshow(cor_map, cmap="jet", alpha=0.7)
+        ax[0, 2].title.set_text(f"Correlation Map C{index_i}/C{index_j}")
+
+        cor_map_overall = correlation_map_overall(probs)
+        ax[0, 3].imshow(img)
+        ax[0, 3].imshow(cor_map_overall, cmap="jet", alpha=0.7)
+        ax[0, 3].title.set_text("Overall Correlation Map")
+
+        cor_map_ivsall = correlation_map_onevsall(probs, index_i)
+        ax[1, 0].imshow(img)
+        ax[1, 0].imshow(cor_map_ivsall, cmap="jet", alpha=0.7)
+        ax[1, 0].title.set_text(f"Correlation Map C{index_i}/All")
+
+        cor_map_jvsall = correlation_map_onevsall(probs, index_j)
+        ax[1, 1].imshow(img)
+        ax[1, 1].imshow(cor_map_jvsall, cmap="jet", alpha=0.7)
+        ax[1, 1].title.set_text(f"Correlation Map C{index_j}/All")
+
+        cor_mat = correlation_matrix(probs, classes)
+        ax[1, 2].imshow(cor_mat, cmap="jet")
+        ax[1, 2].title.set_text(f"Correlation Matrix")
+
         plt.show()
-        plt.close(f)
-
-        # Covariance
-        cov_mat = correlation_matrix(probs)
-        f = plt.figure()
-        plt.imshow(cov_mat, cmap="jet")
-        plt.title("Covariance")
-        plt.show()
-        plt.close(f)
-
-        # Clusters
-        f = plt.figure()
-        plt.imshow(img)
-        plt.imshow(cluster_preds, alpha=0.55)
-        plt.title("Clusters")
-        plt.show()
-
-        # Uncertainty
-        kl_array = kullback_leibler(probs)
-        kl_array = 1 - (kl_array / np.max(kl_array))
-        my_metric1 = np.sum(kl_array) / (probs.shape[2] * probs.shape[2])
-
-        cor_uncertainty = correlation_map_overall(probs)
-        my_metric2 = np.sum(cor_uncertainty) / \
-            (probs.shape[2] * probs.shape[2])
-
-        f, ax = plt.subplots(1, 2)
-        ax[0].imshow(img)
-        ax[0].imshow(kl_array, alpha=0.55)
-        ax[0].title.set_text(f"KL Uncertainty : {my_metric1}")
-
-        ax[1].imshow(img)
-        ax[1].imshow(cor_uncertainty, alpha=0.55)
-        ax[1].title.set_text(f"Cor Uncertainty : {my_metric2}")
-        plt.suptitle("Uncertainty")
-        plt.show()
-        plt.close(f)
 
 
 if __name__ == "__main__":
     model, test_loader, batch_nums, batch_offsets = pre_process()
     evaluate(model, test_loader, batch_nums, batch_offsets)
     shutil.rmtree(model.cfg["experiment_name"])
-    show(saved_data)
+    show(saved_data, args.classes)

@@ -272,11 +272,11 @@ def my_app(cfg: DictConfig) -> None:
     trainer = Trainer(
         log_every_n_steps=cfg.checkpoint_freq,
         logger=tb_logger,
-        max_steps=cfg.max_steps,
+        max_epochs=cfg.max_epochs,
         callbacks=[
             ModelCheckpoint(
                 dirpath=join(checkpoint_dir, name),
-                every_n_train_steps=cfg.checkpoint_freq,
+                every_n_epochs=cfg.checkpoint_freq,
             )
         ],
         **gpu_args
