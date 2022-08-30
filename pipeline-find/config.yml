@@ -1,0 +1,9 @@
+test_folder_path: '../../vol3_test'
+
+project_name: 'vol3'
+num_workers: 2
+batch_size: 3
+
+linear: False
+display: True
+FP_cost: 0.2

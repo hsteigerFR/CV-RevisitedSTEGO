@@ -1,0 +1,25 @@
+ortho_folder_path: '../../ortho_therm'
+output_folder: '../../voltherm_output'
+raw_folder_path: '../../vol_therm'
+test_folder_path: '../../test_therm'
+
+project_name: 'vol_therm'
+model_res: 304
+model_num_classes: 50
+
+num_workers: 2
+batch_size: 5
+slice_win_size: 300
+slice_pad_step: 25
+training_max_epochs: 200
+training_save_freq : 1
+
+class_mode: 'auto'
+linear: True
+ortho_win_size: 100
+ortho_pad_step: 50
+ortho_export_dpi: 2000
+
+dataset_create_step: False
+model_train_step: False
+ortho_eval_step: True

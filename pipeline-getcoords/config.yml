@@ -1,0 +1,7 @@
+ortho_path: '../../VOL6_transparent_mosaic_group1.tif'
+prob_map_path: '../../pmap_35.png'
+output_folder_path: '../../my_output'
+
+processing_resize_factor: 0.5
+probs_threshold: 0.2
+cluster_separation_pix: 150 

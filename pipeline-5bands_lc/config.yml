@@ -1,0 +1,26 @@
+ortho_folder_path: '../../vol3_ortho'
+output_folder: '../../vol3_output'
+raw_folder_path: '../../vol3'
+test_folder_path: '../../vol3_test'
+LC_matrix_path: './matrix.txt'
+
+project_name: 'vol3'
+model_res: 304
+model_num_classes: 100
+
+num_workers: 2
+batch_size: 5
+slice_win_size: 300
+slice_pad_step: 300
+training_max_epochs: 2
+training_save_freq : 1
+
+class_mode: 'auto'
+linear: False
+ortho_win_size: 300
+ortho_pad_step: 150
+ortho_export_dpi: 2000
+
+dataset_create_step: True
+model_train_step: True
+ortho_eval_step: True
